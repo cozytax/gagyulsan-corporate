@@ -3,19 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>가결산 리포트</title>
+<title>가결산 리포트 (법인)</title>
 <link rel="icon" type="image/png" href="assets/symbol.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
-<link rel="stylesheet" href="css/app.css?v=19">
-<link rel="stylesheet" href="css/report.css?v=19">
+<link rel="stylesheet" href="css/app.css?v=20">
+<link rel="stylesheet" href="css/report.css?v=20">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 <header class="topbar no-print">
   <img class="brand-logo" src="assets/logo_h_white.png" alt="편한세무회계" onerror="this.remove()">
-  <div class="brand">가결산 리포트<small>손익계산서 PDF → 12개월 환산 · 추이 · 세무 진단 · 관리계획</small></div>
+  <div class="brand">가결산 리포트 <span class="corp">법인</span><small>손익계산서·재무상태표 PDF → 12개월 환산 · 추이 · 세무 진단 · 재무비율 현황</small></div>
   <div class="spacer"></div>
   <span id="pageInfo" class="pageinfo"></span>
   <span id="busy" class="busy" style="display:none"></span>
@@ -25,10 +25,10 @@
 
 <div class="layout">
   <aside class="side no-print">
-    <h2><span class="step">1</span>손익계산서 PDF 올리기</h2>
+    <h2><span class="step">1</span>손익계산서 · 재무상태표 PDF 올리기</h2>
     <div id="drop" class="drop">
       <b>여기를 클릭하거나 PDF를 끌어다 놓으세요</b>
-      <small>올해(가결산) · 작년 · 재작년 손익계산서를 한 번에 여러 개 올려도 됩니다.<br>비교식(당기·전기 2열) 양식이면 파일 하나로 2개년이 읽힙니다. 작년 같은 기간 손익계산서를 올리면 전년 동기 비교도 표시됩니다.</small>
+      <small>손익계산서와 <b>재무상태표</b>를 함께 올리면 재무비율 현황(Ⅲ쪽)이 추가됩니다. 문서 종류는 자동으로 구분합니다.<br>올해(가결산) · 작년 · 재작년 파일을 한 번에 여러 개 올려도 되고, 비교식(당기·전기 2열) 양식이면 파일 하나로 2개년이 읽힙니다.</small>
       <input id="fileInput" type="file" accept="application/pdf,.pdf" multiple hidden>
     </div>
     <ul id="files" class="files"></ul>
@@ -38,6 +38,9 @@
     <div class="field"><label for="title">보고서 제목</label><select id="title"></select></div>
     <div class="field"><label for="company">회사명</label><input id="company" type="text" placeholder="PDF에서 자동으로 읽습니다"></div>
     <div class="field"><label for="industry">업종</label><select id="industry"></select></div>
+    <div class="field"><label for="bsIndustry">비교 업종 <small class="h2sub">재무비율</small></label><select id="bsIndustry"></select></div>
+    <div class="field"><label for="firmSize">기업규모</label><select id="firmSize"></select></div>
+    <p class="hint" style="margin:-4px 0 8px 104px">재무상태표를 올렸을 때 업종평균(한국은행 기업경영분석 분류)과 비교하는 기준입니다. 선택하지 않으면 비율만 표시됩니다.</p>
     <div class="field"><label for="firm">세무사무소</label><input id="firm" type="text"></div>
     <div class="field"><label for="preparer">담당자 <span class="req">필수</span></label><input id="preparer" type="text" placeholder="이름 입력 — 보고서에 '담당 ○○○'으로 표시"></div>
     <p class="hint" style="margin:-4px 0 8px 104px">한 번 입력하면 이 PC 브라우저에 기억됩니다(다른 PC는 각자 입력).</p>
@@ -83,9 +86,11 @@
     <label class="ta-label" for="planOffice">편한세무회계 관리계획 <small>실제로 수행할 업무만</small> <button id="planResetOffice" class="btn small link">자동으로 되돌리기</button></label>
     <textarea id="planOffice" rows="4"></textarea>
 
-    <h2><span class="step">7</span>읽어낸 숫자 확인 <button id="btnAddYear" class="btn small" style="float:right">연도 직접 추가</button></h2>
+    <h2><span class="step">7</span>읽어낸 숫자 확인 <span style="float:right"><button id="btnAddYear" class="btn small">손익 연도 추가</button> <button id="btnAddBsYear" class="btn small">재무상태표 연도 추가</button></span></h2>
     <div id="datatbl"></div>
     <div id="details"></div>
+    <div id="bsdatatbl"></div>
+    <div id="bsdetails"></div>
     <p class="hint">노란 칸은 손으로 고친 값, 회색 기울임은 PDF에 없어 계산한 값, 빨간 테두리 '미인식'은 PDF에서 못 읽어 0으로 계산 중인 값입니다. 숫자를 고치면 비율·차트·예상 세액이 바로 다시 계산됩니다.</p>
   </aside>
 
@@ -97,10 +102,12 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="js/config.js?v=19"></script>
-<script src="js/parser.js?v=19"></script>
-<script src="js/analysis.js?v=19"></script>
-<script src="js/report.js?v=19"></script>
-<script src="js/app.js?v=19"></script>
+<script src="js/config.js?v=20"></script>
+<script src="js/parser.js?v=20"></script>
+<script src="js/analysis.js?v=20"></script>
+<script src="js/industry_avg.js?v=20"></script>
+<script src="js/balance.js?v=20"></script>
+<script src="js/report.js?v=20"></script>
+<script src="js/app.js?v=20"></script>
 </body>
 </html>

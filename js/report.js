@@ -1,6 +1,7 @@
 /* =====================================================================
  *  report.js — 보고서 HTML 생성
  *  기본 2쪽: ① 경영성과 요약  ② 세무 진단 및 향후 관리계획 (+ 표지 옵션, 내용이 많으면 ②가 다음 쪽으로 이어짐)
+ *  법인용: 재무상태표가 있으면 ③ 재무비율 현황 1쪽 추가 (손익계산서 없이 재무상태표만 올리면 ③만 생성)
  * ===================================================================== */
 (function () {
   'use strict';
@@ -20,14 +21,18 @@
 
   /* ---------- 표지 (옵션) ---------- */
   function cover(model) {
-    const { meta, analysis } = model; const b = analysis.base; const est = b.factor !== 1;
+    const { meta, analysis, ratios } = model; const b = analysis ? analysis.base : null; const est = b ? b.factor !== 1 : false;
+    const year = b ? b.year : ratios.bs.year;
+    let sub = '';
+    if (analysis) sub = analysis.rows.length > 1 ? `<br>${est ? '12개월 환산 추정 및 ' : ''}최근 ${analysis.rows.length}개년 비교 포함` : (est ? '<br>12개월 환산 추정 포함' : '');
+    if (ratios) sub += `<br>재무비율 현황${ratios.industry ? ' · 업종평균 비교' : ''} 포함`;
     return `
 <section class="page cover">
   <div class="rule-top"></div><div class="rule-top-thin"></div>
   <div class="body">
-    <div class="fy">${b.year} 사업연도</div>
+    <div class="fy">${year} 사업연도</div>
     <div class="title-band"><h1>${esc(meta.title)}</h1></div>
-    <div class="sub">기준기간 <span class="period">${esc(periodText(b))}</span>${analysis.rows.length > 1 ? `<br>${est ? '12개월 환산 추정 및 ' : ''}최근 ${analysis.rows.length}개년 비교 포함` : (est ? '<br>12개월 환산 추정 포함' : '')}</div>
+    <div class="sub">${b ? '기준기간' : '기준일'} <span class="period">${esc(model.periodText)}</span>${sub}</div>
     <div class="company-box"><small>회 사 명</small>${esc(meta.company || '회사명 미입력')}</div>
     <div class="meta">보고일 &nbsp;${esc(meta.dateText)}${meta.preparer ? `<br>담당 &nbsp;${esc(meta.preparer)}` : ''}</div>
     <div class="firm"><img src="assets/logo_v.png" alt="${esc(meta.firm)}" onerror="this.style.display='none';this.nextElementSibling.style.display='block'"><span style="display:none">${esc(meta.firm)}<small>TAX &amp; ACCOUNTING</small></span></div>
@@ -38,11 +43,11 @@
 
   /* ---------- 본문 머리글 (회사명·보고서명·기준기간·보고일·로고) ---------- */
   function header(model, pageTitle, num) {
-    const { meta, analysis } = model; const b = analysis.base;
+    const { meta, analysis } = model;
     return `<div class="hdr">
   <div class="hdr-l"><div class="co">${esc(meta.company || '회사명 미입력')}</div>
     <div class="ttl"><span class="num">${num}</span>${esc(pageTitle)}</div>
-    <div class="sub">${esc(meta.title)} · 기준기간 ${esc(periodText(b))} · 보고일 ${esc(meta.dateText)}</div></div>
+    <div class="sub">${esc(meta.title)} · ${analysis ? '기준기간' : '기준일'} ${esc(model.periodText)} · 보고일 ${esc(meta.dateText)}</div></div>
   <img class="hdr-logo" src="assets/logo_h.png" alt="${esc(meta.firm)}" onerror="this.remove()">
 </div>`;
   }
@@ -199,6 +204,115 @@
 </section>`;
   }
 
+  /* ======================================================================
+   *  ③ 재무비율 현황 (재무상태표)
+   * ====================================================================== */
+  const bsDateText = y => `${y.year}년 ${y.endMonth}월 ${y.endDay || (y.endMonth === 12 ? 31 : 30)}일 현재`;
+  function kpiBs(label, k, r, sub) {
+    const v = r.kpi[k]; const neg = v.cur < 0;
+    const g = v.g; const gTxt = Fmt.growthWord(g);
+    return `<div class="kpi">
+  <div class="k">${label}${sub ? `<small>${sub}</small>` : ''}</div>
+  <div class="row"><span class="tag real">당기 ${String(r.bs.year).slice(2)}.${r.bs.endMonth}월 말</span><b class="v${neg ? ' neg' : ''}">${Fmt.man(v.cur)}</b></div>
+  <div class="s">${v.prev !== null ? `전기 ${Fmt.man(v.prev)}${gTxt ? ` 대비 <b class="${g > 0 ? 'up' : g < 0 ? 'down' : ''}">${gTxt}</b>` : ''}` : '전기 자료 없음'}</div>
+</div>`;
+  }
+  /* 재무상태표 요약표 */
+  function bsTable(r, unit) {
+    const m = r.bs.m, p = r.bsPrev ? r.bsPrev.m : null;
+    const spec = [['curAssets', 'total'], ['quickAssets', 'sub'], ['inventory', 'sub'], ['nonCurAssets', 'total'], ['totalAssets', 'total hl'],
+      ['curLiab', 'total'], ['nonCurLiab', 'total'], ['totalLiab', 'total hl'], ['capital', 'sub'], ['retained', 'sub'], ['totalEquity', 'total hl']];
+    const cell = (v, cls) => `<td class="${cls || ''}${v < 0 ? ' neg' : ''}">${Fmt.wonUnit(v, unit)}</td>`;
+    const rows = spec.map(([k, cls]) => {
+      const g = p ? ((p[k] && p[k] !== 0) ? (m[k] - p[k]) / Math.abs(p[k]) * 100 : null) : null;
+      const gCls = g === null ? '' : g > 0 ? 'up' : g < 0 ? 'down' : '';
+      return `<tr class="${cls}"><td class="${cls.includes('total') ? '' : 'sub'}">${window.Balance.BS_LABEL[k]}</td>${p ? cell(p[k]) : ''}${cell(m[k])}${p ? `<td class="delta ${gCls}">${Fmt.delta(g)}</td>` : ''}</tr>`;
+    }).join('');
+    return `<table class="pl bs"><thead><tr><th>항목</th>${p ? `<th>${r.bsPrev.year}년<small>${r.bsPrev.endMonth}월 말 (전기)</small></th>` : ''}<th>${r.bs.year}년<small>${r.bs.endMonth}월 말 (당기)</small></th>${p ? '<th>증감</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  /* 재무구조 띠: 자산 = 부채 + 자본 (당기·전기). 음수 자본(자본잠식)은 부채가 자산을 넘는 부분으로 표시 */
+  function structChart(r) {
+    const rows = [r.bs].concat(r.bsPrev ? [r.bsPrev] : []);
+    const W = 360, barH = 16, gap = 2, rowH = 44, padL = 8, padR = 8, padT = 14;
+    const H = padT + rows.length * rowH + 4;
+    const short = v => { const a = Math.abs(v); const s = a >= 1e8 ? `${(a / 1e8).toFixed(1).replace(/\.0$/, '')}억` : `${Math.round(a / 1e4).toLocaleString('ko-KR')}만`; return (v < 0 ? '−' : '') + s; };
+    const max = Math.max(1, ...rows.map(y => Math.max(y.m.totalAssets, y.m.totalLiab, y.m.curAssets + y.m.nonCurAssets)));
+    const labelRoom = 62;   // 띠 오른쪽 끝 라벨 자리
+    const sc = v => Math.max(0, v) / max * (W - padL - padR - labelRoom);
+    let svg = '';
+    rows.forEach((y, i) => {
+      const m = y.m; const y0 = padT + i * rowH;
+      svg += `<text x="${padL}" y="${y0 - 3}" font-size="9" fill="#4b5563" font-weight="600">${y.year}년 ${y.endMonth}월 말</text>`;
+      // 1줄: 자산 (유동 | 비유동)
+      const wC = sc(m.curAssets), wN = sc(m.nonCurAssets);
+      svg += `<rect x="${padL}" y="${y0}" width="${Math.max(0, wC - gap / 2).toFixed(1)}" height="${barH}" rx="2" fill="var(--y3)"/>`;
+      svg += `<rect x="${(padL + wC + gap / 2).toFixed(1)}" y="${y0}" width="${Math.max(0, wN - gap / 2).toFixed(1)}" height="${barH}" rx="2" fill="var(--y1)"/>`;
+      if (wC > 46) svg += `<text x="${padL + 4}" y="${y0 + 11.5}" font-size="8.2" fill="#fff" font-weight="600">유동 ${short(m.curAssets)}</text>`;
+      if (wN > 52) svg += `<text x="${(padL + wC + 4).toFixed(1)}" y="${y0 + 11.5}" font-size="8.2" fill="#1d2433" font-weight="600">비유동 ${short(m.nonCurAssets)}</text>`;
+      svg += `<text x="${(padL + sc(m.totalAssets) + 3).toFixed(1)}" y="${y0 + 11.5}" font-size="8.2" fill="#1d2433">자산 ${short(m.totalAssets)}</text>`;
+      // 2줄: 부채 | 자본
+      const y1 = y0 + barH + gap + 1; const wL = sc(m.totalLiab), wE = sc(m.totalEquity);
+      svg += `<rect x="${padL}" y="${y1}" width="${Math.max(0, wL - gap / 2).toFixed(1)}" height="${barH}" rx="2" fill="var(--warn)"/>`;
+      if (m.totalEquity > 0) svg += `<rect x="${(padL + wL + gap / 2).toFixed(1)}" y="${y1}" width="${Math.max(0, wE - gap / 2).toFixed(1)}" height="${barH}" rx="2" fill="var(--good)"/>`;
+      if (wL > 46) svg += `<text x="${padL + 4}" y="${y1 + 11.5}" font-size="8.2" fill="#fff" font-weight="600">부채 ${short(m.totalLiab)}</text>`;
+      else svg += `<text x="${(padL + wL + (m.totalEquity > 0 ? wE : 0) + 3).toFixed(1)}" y="${y1 + 11.5}" font-size="8.2" fill="#1d2433">부채 ${short(m.totalLiab)}</text>`;
+      if (m.totalEquity > 0 && wE > 46) svg += `<text x="${(padL + wL + 4).toFixed(1)}" y="${y1 + 11.5}" font-size="8.2" fill="#fff" font-weight="600">자본 ${short(m.totalEquity)}</text>`;
+      const endX = padL + Math.max(wL, wL + wE);
+      if (m.totalEquity <= 0) svg += `<text x="${(endX + 3).toFixed(1)}" y="${y1 + 11.5}" font-size="8.2" fill="var(--warn)" font-weight="600">자본잠식 ${short(m.totalEquity)}</text>`;
+      else if (wE <= 46) svg += `<text x="${(endX + 3).toFixed(1)}" y="${y1 + 11.5}" font-size="8.2" fill="#1d2433">자본 ${short(m.totalEquity)}</text>`;
+    });
+    const legend = `<span><i style="background:var(--y3)"></i>유동자산</span><span><i style="background:var(--y1)"></i>비유동자산</span><span><i style="background:var(--warn)"></i>부채</span><span><i style="background:var(--good)"></i>자본</span>`;
+    return `<div class="chart-wrap"><div class="chart-legend">${legend}</div><svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="자산·부채·자본 구성">${svg}</svg><div class="chart-note">윗줄 자산(유동+비유동) · 아랫줄 부채+자본. 길이는 금액에 비례.</div></div>`;
+  }
+  /* 4개 지표 그룹 표 */
+  function ratioGroups(r) {
+    const badge = it => it.grade ? `<span class="badge ${it.grade}">${it.gradeLabel}</span>` : `<span class="badge none">${it.value === null ? '-' : '비교 없음'}</span>`;
+    const cnt = g => { const c = g.count; const parts = []; if (c.good) parts.push(`<b class="good">양호 ${c.good}</b>`); if (c.normal) parts.push(`<b class="normal">보통 ${c.normal}</b>`); if (c.bad) parts.push(`<b class="bad">미흡 ${c.bad}</b>`); return parts.join(''); };
+    return `<div class="ratio-grid">${r.groups.map(g => `<div class="rgroup">
+  <div class="rg-head"><span class="nm">${esc(g.label)} 지표</span><span class="ds">${esc(g.desc)}</span><span class="cnt">${cnt(g)}</span></div>
+  <table class="rt"><thead><tr><th>항목</th><th>해당업체</th><th>업종평균</th><th>평가</th></tr></thead><tbody>
+  ${g.items.map(it => `<tr><td>${esc(it.label)}</td><td class="v${it.grade === 'bad' ? ' bad' : ''}${it.value === null && !it.text.includes('없음') ? ' na' : ''}">${it.value === null && it.note && !it.text.includes('없음') ? esc(it.note) : esc(it.text)}</td><td class="a">${esc(it.avgText)}${it.avgFallback ? '<sup>†</sup>' : ''}</td><td>${badge(it)}</td></tr>`).join('')}
+  </tbody></table></div>`).join('')}</div>`;
+  }
+  function ratioPoints(r) {
+    if (!r.points.length) return '';
+    return `<h3 class="sec">재무 진단 포인트</h3><ul class="points compact two">${r.points.map(pt => `<li><span class="dot ${pt.tone}"></span><div><b>${esc(pt.title)}</b><p>${esc(pt.body)}</p></div></li>`).join('')}</ul>`;
+  }
+  function ratioNotes(r) {
+    const bands = C.ratioBands || {};
+    const bandTxt = (k, nm) => bands[k] ? (bands[k].type === 'rel' ? `${nm} ±${bands[k].pct}%` : `${nm} ±${bands[k].pp}${k === 'x1' ? '배' : '%p'}`) : '';
+    const fallback = r.groups.some(g => g.items.some(it => it.avgFallback));
+    const formulas = r.groups.map(g => g.items.map(it => `<span><i>${esc(it.label)}</i> ${esc(it.formula)}</span>`).join('')).join('');
+    return `<div class="glossary ratio-notes">
+  <div><b>평가 기준</b> 업종평균 대비 ${bandTxt('rel10', '비율·회전율')} · ${bandTxt('pp1', '이익률')} · ${bandTxt('pp3', '증가율')} · ${bandTxt('x1', '이자보상비율')} 이내면 '보통', 벗어나면 좋은 방향은 '양호', 나쁜 방향은 '미흡'. ${r.hasPl && r.pl && r.pl.factor !== 1 ? `손익 항목은 ${r.pl.months}개월 실적을 12개월로 환산한 값. ` : ''}${C.turnoverUseAverage !== false && r.bsPrev ? '회전율·ROA·ROE 분모는 기초·기말 평균잔액. ' : ''}${r.bsPrev && r.bs.endMonth < 12 ? `증가율은 전기 말 대비 ${r.bs.endMonth}개월간 변동(연환산 아님). ` : ''}${fallback ? '† 해당 세분류 자료가 없어 상위 업종 평균 사용. ' : ''}업종평균 출처: ${esc(r.avgSource || '')}${r.industry ? ` — 기준 업종 ${esc(r.industry.key)} · ${esc(r.firmSize)}` : ' — 업종 미선택(비교 생략)'}.</div>
+  <div class="formulas"><b>산식</b> ${formulas}</div>
+</div>`;
+  }
+  function page3(model, pageNo, total, num) {
+    const r = model.ratios; const unit = (model.options && model.options.unit) || 1;
+    const sm = r.summary;
+    return `
+<section class="page p3">
+  ${header(model, '재무비율 현황', num)}
+  <div class="kpis bs">
+    ${kpiBs('자산총계', 'totalAssets', r)}
+    ${kpiBs('부채총계', 'totalLiab', r)}
+    ${kpiBs('자본총계', 'totalEquity', r, '자산 − 부채')}
+  </div>
+  <div class="two-col gap bs-row">
+    <div><h3 class="sec">재무상태표 요약 <small>${esc(bsDateText(r.bs))} · 단위 ${unit === 1000 ? '천원' : '원'}</small></h3>${bsTable(r, unit)}</div>
+    <div><h3 class="sec">재무구조 <small>자산 = 부채 + 자본</small></h3>${structChart(r)}
+      <div class="summary rsum"><div class="lbl">종합 평가</div><p>${esc(sm.head)}</p>${sm.detail ? `<div class="note">${esc(sm.detail)}${sm.weak.length && sm.weak.length <= 4 ? ` · 미흡: ${esc(sm.weak.join(', '))}` : ''}</div>` : ''}</div>
+    </div>
+  </div>
+  <h3 class="sec">재무비율 분석 요약 <small>${r.industry ? `업종평균(${esc(r.industry.key)} · ${esc(r.firmSize)}${r.avgYear ? ` · ${r.avgYear}년` : ''}) 대비` : '업종을 선택하면 업종평균과 비교합니다'}${r.plMismatch ? ` · 손익계산서(${r.plMismatch}년)와 재무상태표(${r.bs.year}년) 연도가 달라 손익 지표 생략` : ''}</small></h3>
+  ${ratioGroups(r)}
+  ${ratioPoints(r)}
+  ${ratioNotes(r)}
+  ${footer(model, pageNo, total)}
+</section>`;
+  }
+
   /* ---------- 2쪽 블록 ---------- */
   /* 담당자 종합 의견 → 문단 단위 '단위' 목록 (쪽이 넘치면 문단 사이에서 다음 쪽으로 이어진다) */
   function opinionUnits(model) {
@@ -344,23 +458,29 @@ ${pending}
 
   /** groups: 2쪽 단위를 쪽별로 나눈 배열(app.js 가 높이를 재서 만든다). 없으면 한 쪽에 전부. */
   function compose(model, groups) {
-    const o = model.options || {}; const all = page2Units(model);
-    if (!groups) groups = [all];
-    const total = (o.cover ? 1 : 0) + 1 + groups.length;
+    const o = model.options || {}; const hasPl = !!model.analysis; const hasBs = !!model.ratios;
+    const all = hasPl ? page2Units(model) : [];
+    if (!groups) groups = hasPl ? [all] : [];
+    const total = (o.cover ? 1 : 0) + (hasPl ? 1 + groups.length : 0) + (hasBs ? 1 : 0);
     let n = o.cover ? 2 : 1;
-    const opIdx = all.map((u, i) => u.type === 'op' ? i : -1).filter(i => i >= 0);
-    const ptIdx = all.map((u, i) => u.type === 'pt' ? i : -1).filter(i => i >= 0);
-    let html = (o.cover ? cover(model) : '') + page1(model, n, total);
-    let idx = 0;
-    groups.forEach((g, gi) => {
-      const info = { index: idx, opFirst: opIdx[0], opLast: opIdx[opIdx.length - 1], opStarted: opIdx.length && idx > opIdx[0], ptFirst: ptIdx[0], ptStarted: ptIdx.length && idx > ptIdx[0] };
-      html += page2Html(model, g, n + 1 + gi, total, gi > 0, info);
-      idx += g.length;
-    });
+    let html = (o.cover ? cover(model) : '');
+    if (hasPl) {
+      const opIdx = all.map((u, i) => u.type === 'op' ? i : -1).filter(i => i >= 0);
+      const ptIdx = all.map((u, i) => u.type === 'pt' ? i : -1).filter(i => i >= 0);
+      html += page1(model, n, total);
+      let idx = 0;
+      groups.forEach((g, gi) => {
+        const info = { index: idx, opFirst: opIdx[0], opLast: opIdx[opIdx.length - 1], opStarted: opIdx.length && idx > opIdx[0], ptFirst: ptIdx[0], ptStarted: ptIdx.length && idx > ptIdx[0] };
+        html += page2Html(model, g, n + 1 + gi, total, gi > 0, info);
+        idx += g.length;
+      });
+      n += 1 + groups.length;
+    }
+    if (hasBs) html += page3(model, n, total, hasPl ? 'Ⅲ' : 'Ⅰ');
     return html;
   }
 
   function render(container, model, groups) { container.innerHTML = compose(model, groups); }
 
-  window.Report = { render, compose, page2Units, page2Html, periodText, koDate };
+  window.Report = { render, compose, page2Units, page2Html, periodText, koDate, bsDateText };
 })();

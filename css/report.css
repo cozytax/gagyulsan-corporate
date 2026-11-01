@@ -178,6 +178,59 @@ table.mini .focus { display: inline-block; font-size: 6.4pt; font-weight: 700; c
 .plan .due { display: inline-block; margin-left: 1.5mm; font-size: 7.2pt; color: var(--navy-deep); background: #e6ecf5; padding: 0 1.3mm; border-radius: 0.6mm; white-space: nowrap; }
 .disclaimer { margin-top: 3mm; padding: 2mm 3mm; background: #f7f7f7; border-left: 2px solid var(--line); font-size: 7.6pt; color: var(--muted); line-height: 1.45; }
 
+/* ---------- 3쪽: 재무비율 현황 ---------- */
+.page.p3 h3.sec { margin: 2.8mm 0 1.5mm; }
+.kpis.bs .kpi { padding: 1.8mm 3mm 1.5mm; }
+.kpis.bs .kpi .v { font-size: 12.5pt; white-space: nowrap; }
+.kpis.bs .kpi .tag { font-size: 6.5pt; }
+.kpis.bs .kpi .s { margin-top: 1mm; padding-top: 0.8mm; }
+.two-col.bs-row { grid-template-columns: 57fr 43fr; }
+table.pl.bs th, table.pl.bs td { padding: 0.55mm 1.8mm; font-size: 8pt; line-height: 1.38; white-space: nowrap; }
+table.pl.bs td.delta { font-size: 7.6pt; }
+.rsum { margin-top: 2.5mm; margin-bottom: 0; padding: 2mm 3.2mm; }
+.rsum p { font-size: 9.6pt; }
+.ratio-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm 4mm; }
+.rgroup { border: 1px solid var(--line); border-top: 2.5px solid var(--navy); background: #fbfbfd; }
+.rg-head { display: flex; align-items: baseline; gap: 2mm; padding: 1.3mm 2.6mm 1mm; border-bottom: 1px solid var(--line-soft); }
+.rg-head .nm { font-size: 9.4pt; font-weight: 800; color: var(--navy-deep); }
+.rg-head .ds { font-size: 7.4pt; color: var(--muted); flex: 1; }
+.rg-head .cnt b { font-size: 7.2pt; font-weight: 700; margin-left: 1.5mm; padding: 0.2mm 1.3mm; border-radius: 0.8mm; background: #eef1f6; }
+.rg-head .cnt b.good { color: var(--good); background: #e7f3ec; }
+.rg-head .cnt b.normal { color: var(--ink-2); }
+.rg-head .cnt b.bad { color: var(--warn); background: #fbeee6; }
+table.rt { width: 100%; }
+table.rt th, table.rt td { padding: 0.7mm 2.4mm; font-size: 8.3pt; line-height: 1.4; border-bottom: 1px solid var(--line-soft); }
+table.rt th { font-weight: 600; color: var(--muted); font-size: 7.4pt; text-align: right; background: transparent; }
+table.rt th:first-child, table.rt td:first-child { text-align: left; }
+table.rt td { text-align: right; font-variant-numeric: tabular-nums; }
+table.rt td:first-child { color: var(--ink-2); }
+table.rt td.v { font-weight: 700; color: var(--ink); }
+table.rt td.v.bad { color: var(--warn); }
+table.rt td.v.na { font-weight: 400; font-size: 7.2pt; color: var(--muted); }
+table.rt td.a { color: var(--muted); }
+table.rt td.a sup { font-size: 6pt; }
+table.rt tr:last-child td { border-bottom: 0; }
+.badge { display: inline-block; min-width: 9mm; text-align: center; font-size: 7.4pt; font-weight: 700; padding: 0.3mm 1.6mm; border-radius: 0.9mm; letter-spacing: 0.02em; }
+.badge.good { background: var(--good); color: #fff; }
+.badge.normal { background: #dfe5ee; color: var(--ink-2); }
+.badge.bad { background: var(--warn); color: #fff; }
+.badge.none { background: transparent; color: var(--muted); border: 1px dashed var(--line); font-weight: 500; }
+.points.compact li { padding: 1.2mm 0; }
+.points.compact b { font-size: 9pt; }
+.points.compact p { font-size: 8.4pt; line-height: 1.48; }
+.points.two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 5mm; }
+.points.two li { border-bottom: 1px dashed var(--line-soft); }
+.ratio-notes { margin-top: 2.4mm; font-size: 7pt; }
+.ratio-notes .formulas { margin-top: 0.6mm; font-size: 6.7pt; }
+.ratio-notes .formulas span { white-space: nowrap; margin-right: 1.8mm; }
+.page.compact .ratio-grid { gap: 2mm 3mm; }
+.page.compact table.rt th, .page.compact table.rt td { padding: 0.45mm 2.2mm; font-size: 8pt; }
+.page.compact .rsum { padding: 1.6mm 3mm; }
+.page.compact .ratio-notes { display: block; }
+.page.compact .ratio-notes .formulas { display: none; }
+.page.compact .points.compact li { padding: 0.9mm 0; }
+.page.compact .kpis.bs .kpi { padding: 1.6mm 3mm 1.4mm; }
+
 /* ---------- 인쇄 ---------- */
 @media print {
   @page { size: A4 portrait; margin: 0; }

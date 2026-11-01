@@ -1,12 +1,13 @@
 /* =====================================================================
  *  가결산 리포트 설정값
- *  - 세율표·기본값·업종·비용 유형은 여기만 고치면 됩니다. (다른 js 파일은 손대지 않아도 됨)
+ *  - 세율표·기본값·업종·비용 유형·재무비율 정의는 여기만 고치면 됩니다. (다른 js 파일은 손대지 않아도 됨)
+ *  - 법인용: 재무상태표 PDF를 함께 올리면 재무비율 현황(Ⅲ쪽)이 추가됩니다. 업종평균 자료는 js/industry_avg.js
  * ===================================================================== */
 window.CONFIG = {
   // 표지·문서 기본값
   firmName: '편한세무회계',
   reportTitle: '가결산 보고서',
-  reportTitleOptions: ['가결산 보고서', '중간결산 보고서', '경영성과 보고서'],
+  reportTitleOptions: ['가결산 보고서', '중간결산 보고서', '경영성과 보고서', '재무현황 보고서'],
   footnote: '본 보고서는 보고일 현재의 결산내역을 기초로 작성되었습니다.',
   coverDefault: true,                 // 표지 포함 기본값 (직원이 체크를 바꾸면 그 브라우저에 기억됨)
   // 접속 암호 (인터넷에 올렸을 때 외부인이 쓰지 못하게). 빈칸이면 암호 없음.
@@ -58,7 +59,7 @@ window.CONFIG = {
   },
   individualBasicDeduction: 1500000, // 개인 기본공제(본인) — 단순 추정용
   localTaxRate: 0.10,                // 지방소득세 = 소득세·법인세 산출세액의 10%
-  defaultEntity: 'indiv',            // 기본 사업자 구분: 'indiv'(개인) | 'corp'(법인). PDF에 '법인세' 항목이 있으면 법인으로 자동 전환
+  defaultEntity: 'corp',             // 기본 사업자 구분: 'indiv'(개인) | 'corp'(법인). 법인용 버전이라 법인이 기본. PDF에 '법인세' 항목이 있으면 법인으로 자동 전환
 
   // 공제·감면 항목. mode: 'rate' = 산출세액의 %  /  'amount' = 금액(원)  /  'both' = 둘 다 입력
   creditTypes: [
@@ -108,6 +109,65 @@ window.CONFIG = {
   interestKeywords: ['이자비용', '지급이자', '이자'],
   // 기업업무추진비(접대비)로 볼 계정
   entertainKeywords: ['접대비', '기업업무추진비'],
+
+  /* ---------- 재무상태표 · 재무비율 (법인용) ----------
+   * 재무상태표 세부 계정 중 비율 계산에 묶어 쓰는 계정 (공백·점 제거한 계정명에 포함되면 해당)
+   */
+  receivableKeywords: ['외상매출금', '받을어음'],                       // 매출채권
+  payableKeywords: ['외상매입금', '지급어음'],                           // 매입채무
+  borrowingKeywords: ['단기차입금', '장기차입금', '유동성장기부채', '사채', '주임종단기차입금', '주임종단기채무', '주임종장기차입금'],  // 차입금 (차입금의존도 분자)
+  // 대분류 없이 세부 계정만 읽힌 재무상태표에서 합계를 추정할 때 쓰는 분류표 (계정명에 포함되면 해당 그룹)
+  bsDetailMap: {
+    quick: ['현금', '예금', '외상매출금', '받을어음', '미수금', '미수수익', '선급금', '선급비용', '부가세대급금', '선납세금', '전도금', '가지급금', '단기대여금', '단기금융상품', '단기매매증권', '주임종단기대여금', '본지점'],
+    inventory: ['상품', '제품', '원재료', '재공품', '저장품', '미착품', '부재료'],
+    invest: ['장기성예금', '장기금융상품', '매도가능증권', '만기보유증권', '장기대여금', '투자부동산', '지분법', '출자금'],
+    ppe: ['토지', '건물', '구축물', '기계장치', '차량운반구', '비품', '공구', '시설장치', '건설중인자산', '집기'],
+    intangible: ['개발비', '특허권', '상표권', '영업권', '소프트웨어', '산업재산권', '라이선스'],
+    otherNonCur: ['임차보증금', '보증금', '지식재산공제부금', '장기미수금', '이연법인세자산'],
+    curLiab: ['외상매입금', '지급어음', '미지급금', '예수금', '부가세예수금', '선수금', '미지급세금', '미지급비용', '단기차입금', '주임종단기채무', '주임종단기차입금', '가수금', '유동성장기부채', '선수수익', '미지급배당금'],
+    nonCurLiab: ['장기차입금', '퇴직급여충당부채', '장기미지급금', '임대보증금', '사채', '이연법인세부채', '주임종장기차입금'],
+    capital: ['자본금'],
+    capSurplus: ['주식발행초과금', '자본잉여금'],
+  },
+  turnoverUseAverage: true,          // 회전율·ROA·ROE 분모: 전기 자료가 있으면 (기초+기말)/2 평균잔액 (한국은행 방식). false 면 기말잔액
+  defaultFirmSize: '중소기업',         // 업종평균 비교 기준 규모: '중소기업' | '종합' | '대기업'
+  /* 평가 기준 — 업종평균 대비 이 범위 안이면 '보통', 벗어나면 좋은 방향은 '양호', 나쁜 방향은 '미흡'
+   *   rel: 업종평균의 ±pct %  /  abs: ±pp(퍼센트포인트 또는 배·회 단위 절대값) */
+  ratioBands: {
+    rel10: { type: 'rel', pct: 10 },  // 부채비율·차입금의존도·유동비율·회전율
+    pp1:   { type: 'abs', pp: 1 },    // 이익률·ROA·ROE (±1%p)
+    pp3:   { type: 'abs', pp: 3 },    // 증가율 (±3%p)
+    x1:    { type: 'abs', pp: 1 },    // 이자보상비율 (±1배)
+  },
+  // 비율 정의. key 는 js/industry_avg.js 의 metrics 키와 같아야 업종평균이 붙는다. betterWhen: 'high' 클수록 좋음 | 'low' 작을수록 좋음
+  ratioGroups: [
+    { key: 'stability', label: '안정성', desc: '빚을 감당할 힘', items: [
+      { key: 'debtRatio', label: '부채비율', formula: '부채총계 ÷ 자본총계', betterWhen: 'low', band: 'rel10' },
+      { key: 'borrowDep', label: '차입금의존도', formula: '차입금 ÷ 자산총계', betterWhen: 'low', band: 'rel10' },
+      { key: 'curRatio', label: '유동비율', formula: '유동자산 ÷ 유동부채', betterWhen: 'high', band: 'rel10' },
+      { key: 'intCover', label: '이자보상비율', formula: '영업이익 ÷ 이자비용', betterWhen: 'high', band: 'x1', unit: '배' },
+    ] },
+    { key: 'profitability', label: '수익성', desc: '얼마나 남기는가', items: [
+      { key: 'netMargin', label: '매출액순이익률', formula: '당기순이익 ÷ 매출액', betterWhen: 'high', band: 'pp1' },
+      { key: 'opMargin', label: '매출액영업이익률', formula: '영업이익 ÷ 매출액', betterWhen: 'high', band: 'pp1' },
+      { key: 'roa', label: '총자산이익률(ROA)', formula: '당기순이익 ÷ 자산총계', betterWhen: 'high', band: 'pp1' },
+      { key: 'roe', label: '자기자본이익률(ROE)', formula: '당기순이익 ÷ 자본총계', betterWhen: 'high', band: 'pp1' },
+    ] },
+    { key: 'growth', label: '성장성', desc: '전년보다 얼마나 커졌는가', items: [
+      { key: 'assetGrowth', label: '총자산증가율', formula: '(당기 − 전기) ÷ 전기 자산총계', betterWhen: 'high', band: 'pp3' },
+      { key: 'equityGrowth', label: '자기자본증가율', formula: '(당기 − 전기) ÷ 전기 자본총계', betterWhen: 'high', band: 'pp3' },
+      { key: 'curAssetGrowth', label: '유동자산증가율', formula: '(당기 − 전기) ÷ 전기 유동자산', betterWhen: 'high', band: 'pp3' },
+      { key: 'salesGrowth', label: '매출액증가율', formula: '(당기 − 전기) ÷ 전기 매출액', betterWhen: 'high', band: 'pp3' },
+    ] },
+    { key: 'activity', label: '활동성', desc: '자산을 얼마나 잘 돌리는가', items: [
+      { key: 'assetTurn', label: '총자산회전율', formula: '매출액 ÷ 자산총계', betterWhen: 'high', band: 'rel10', unit: '회' },
+      { key: 'invTurn', label: '재고자산회전율', formula: '매출액 ÷ 재고자산', betterWhen: 'high', band: 'rel10', unit: '회' },
+      { key: 'arTurn', label: '매출채권회전율', formula: '매출액 ÷ 매출채권', betterWhen: 'high', band: 'rel10', unit: '회' },
+      { key: 'apTurn', label: '매입채무회전율', formula: '매출액 ÷ 매입채무', betterWhen: 'high', band: 'rel10', unit: '회' },
+    ] },
+  ],
+  // 재무비율 진단 문구 기준 (%)
+  ratioThresholds: { debtRatioHigh: 200, debtRatioLow: 100, curRatioLow: 100, curRatioGood: 150, borrowDepHigh: 40, maxPoints: 4 },
 
   // 진단 기준 (비율은 %)
   thresholds: {

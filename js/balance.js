@@ -177,7 +177,8 @@
     r.curAssetGrowth = p ? { value: growth(m.curAssets, p.curAssets) } : { value: null, note: '전기 자료 없음' };
     r.salesGrowth = (a && plPrev) ? { value: growth(a.sales, plPrev.a.sales) } : { value: null, note: a ? '전년 손익 없음' : '손익계산서 필요' };
     r.assetTurn = a ? { value: avg('totalAssets') ? a.sales / avg('totalAssets') : null, unit: '회' } : { value: null, note: '손익계산서 필요' };
-    r.invTurn = a ? (avg('inventory') > 0 ? { value: a.sales / avg('inventory'), unit: '회' } : { value: null, note: '재고자산 없음' }) : { value: null, note: '손익계산서 필요' };
+    r.invTurn = a ? (avg('inventory') > 0 ? { value: a.sales / avg('inventory'), unit: '회' } : { value: null, note: '재고자산 없음', noInventory: true }) : { value: null, note: '손익계산서 필요' };
+    r.nonCurTurn = a ? (avg('nonCurAssets') > 0 ? { value: a.sales / avg('nonCurAssets'), unit: '회' } : { value: null, note: '비유동자산 없음' }) : { value: null, note: '손익계산서 필요' };
     r.arTurn = a ? (avgG('receivables') > 0 ? { value: a.sales / avgG('receivables'), unit: '회' } : { value: null, note: '매출채권 없음' }) : { value: null, note: '손익계산서 필요' };
     r.apTurn = a ? (avgG('payables') > 0 ? { value: a.sales / avgG('payables'), unit: '회' } : { value: null, note: '매입채무 없음' }) : { value: null, note: '손익계산서 필요' };
     r._interest = interest;
@@ -217,18 +218,28 @@
     const plPrev = pl ? (plRows.find(r => r.year === bs.year - 1) || null) : null;
     const plMismatch = plAnalysis && !pl ? plAnalysis.base.year : null;
     const raw = computeRatios(bs, bsPrev, pl, plPrev);
+    // 전기 비율 (전기 재무상태표가 있을 때. 전전기가 없으면 전기 증가율은 '-')
+    const bsPrevPrev = bsYears.length > 2 ? bsYears[bsYears.length - 3] : null;
+    const plPrevPrev = plPrev ? (plRows.find(r => r.year === bs.year - 2) || null) : null;
+    const rawPrev = bsPrev ? computeRatios(bsPrev, bsPrevPrev, plPrev, plPrevPrev) : null;
+    let substituted = null;
     const size = opts.firmSize || C.defaultFirmSize || '중소기업';
     const ind = findIndustry(opts.industryKey);
     const IA = window.INDUSTRY_AVG;
     const groups = (C.ratioGroups || []).map(g => {
       const items = g.items.map(def => {
+        // 재고가 없는 회사(서비스업 등)는 재고자산회전율 대신 비유동자산회전율
+        if (def.key === 'invTurn' && raw.invTurn && raw.invTurn.noInventory && raw.nonCurTurn && raw.nonCurTurn.value !== null) {
+          def = { ...def, key: 'nonCurTurn', label: '비유동자산회전율', formula: '매출액 ÷ 비유동자산' }; substituted = '재고가 없어 재고자산회전율 대신 비유동자산회전율 표시';
+        }
         const res = raw[def.key] || { value: null };
+        const resPrev = rawPrev ? (rawPrev[def.key] || { value: null }) : { value: null };
         const avgInfo = lookupAvg(opts.industryKey, size, def.key);
         let avgVal = avgInfo ? avgInfo.value : null;
         if (def.key === 'intCover' && avgVal !== null) avgVal = avgVal / 100;   // 한국은행 자료는 % → 배
         let grade = rate(def, res.value, avgVal);
         if (def.key === 'intCover' && res.noInterest) grade = 'good';          // 이자비용이 없으면 금융비용 부담 없음
-        return { ...def, value: res.value, note: res.note || '', avg: avgVal, avgFallback: avgInfo && !avgInfo.exact ? avgInfo.industry.key : null, grade, gradeLabel: grade ? RATE_LABEL[grade] : '-', text: res.noInterest ? '이자비용 없음' : fmtRatio(def, res.value), avgText: fmtRatio(def, avgVal) };
+        return { ...def, value: res.value, note: res.note || '', avg: avgVal, avgFallback: avgInfo && !avgInfo.exact ? avgInfo.industry.key : null, grade, gradeLabel: grade ? RATE_LABEL[grade] : '-', text: res.noInterest ? '이자비용 없음' : fmtRatio(def, res.value), avgText: fmtRatio(def, avgVal), prevValue: resPrev.value, prevText: resPrev.noInterest ? '이자 없음' : fmtRatio(def, resPrev.value) };
       });
       const count = { good: 0, normal: 0, bad: 0 }; items.forEach(it => { if (it.grade) count[it.grade]++; });
       return { key: g.key, label: g.label, desc: g.desc, items, count };
@@ -240,7 +251,7 @@
     };
     const points = buildRatioPoints(bs, bsPrev, pl, raw, groups, ind);
     const summary = buildRatioSummary(groups, raw, bs);
-    return { bs, bsPrev, years: bsYears, pl, plPrev, plMismatch, raw, groups, kpi, points, summary, industry: ind, firmSize: size, avgYear: IA ? IA.year : null, avgSource: IA ? IA.source : '', hasPl: !!pl };
+    return { bs, bsPrev, years: bsYears, pl, plPrev, plMismatch, raw, rawPrev, groups, kpi, points, summary, industry: ind, firmSize: size, avgYear: IA ? IA.year : null, avgSource: IA ? IA.source : '', hasPl: !!pl, substituted, hasPrevCol: !!rawPrev };
   }
 
   /* ---------- 진단 문구 ---------- */

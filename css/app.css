@@ -36,6 +36,7 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .files li .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .files li .tag { background: #eef3fb; color: #1f3a63; border-radius: 4px; padding: 2px 6px; font-size: 11px; white-space: nowrap; }
 .files li .tag.bs { background: #1f3a63; color: #fff; }
+.files li .tag.pl { background: #e3a52b; color: #1d2433; }
 .files li .x { border: 0; background: none; cursor: pointer; color: #7b8494; font-size: 16px; line-height: 1; }
 .files li.err { border-color: #f0c9b5; background: #fff7f3; }
 

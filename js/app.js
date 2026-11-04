@@ -10,7 +10,7 @@
   const newExtra = () => ({ label: '', type: 'expense', amount: 0, allowed: null, status: 'review' });
 
   const state = {
-    files: [],          // {name, stmt, error}  stmt.type: 'pl' | 'bs'
+    files: [],          // {name, stmts:[stmt…], error}  stmt.type: 'pl' | 'bs' (일괄출력 PDF는 서류가 둘 이상)
     manual: {},         // {year: {m:{}, months}}
     edits: {},          // {year: {key: value}}  사용자가 손으로 고친 값
     analysis: null, years: [], samePeriod: null,
@@ -38,10 +38,10 @@
       if (state.files.some(x => x.name === f.name)) { toast(`'${f.name}' 은 이미 올라가 있습니다.`); continue; }
       try {
         const buf = await f.arrayBuffer();
-        const stmt = await window.Parser.parsePdf(buf, f.name);
-        if (!stmt.periods.length) throw new Error(`${stmt.type === 'bs' ? '재무상태표' : '손익계산서'} 항목을 찾지 못했습니다. 텍스트가 없는 스캔본이거나 양식이 다를 수 있습니다.`);
-        state.files.push({ name: f.name, stmt });
-        afterParse(stmt);
+        const stmts = (await window.Parser.parsePdfAll(buf, f.name)).filter(s => s.periods.length);
+        if (!stmts.length) throw new Error('손익계산서·재무상태표 항목을 찾지 못했습니다. 텍스트가 없는 스캔본이거나 양식이 다를 수 있습니다.');
+        state.files.push({ name: f.name, stmts });
+        stmts.forEach(afterParse);
       } catch (e) { console.error(e); state.files.push({ name: f.name, error: e.message || String(e) }); }
     }
     setBusy(false); recompute();
@@ -56,8 +56,9 @@
       setBusy(true);
       const res = await fetch(url); if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
       const buf = await res.arrayBuffer(); const name = decodeURIComponent(url.split('/').pop());
-      const stmt = await window.Parser.parsePdf(buf, name);
-      state.files.push({ name, stmt }); afterParse(stmt);
+      const stmts = (await window.Parser.parsePdfAll(buf, name)).filter(s => s.periods.length);
+      if (!stmts.length) throw new Error('손익계산서·재무상태표 항목을 찾지 못했습니다.');
+      state.files.push({ name, stmts }); stmts.forEach(afterParse);
     } catch (e) { console.error(e); toast('불러오기 실패: ' + e.message); }
     setBusy(false); recompute();
   }
@@ -66,8 +67,9 @@
 
   /* ---------- 계산 ---------- */
   function recompute() {
-    const stmts = state.files.filter(f => f.stmt && f.stmt.type !== 'bs').map(f => f.stmt);
-    const bsStmts = state.files.filter(f => f.stmt && f.stmt.type === 'bs').map(f => f.stmt);
+    const all = state.files.flatMap(f => f.stmts || []);
+    const stmts = all.filter(s => s.type !== 'bs');
+    const bsStmts = all.filter(s => s.type === 'bs');
     const merged = A.mergeStatements(stmts, state.manual);
     state.warnings = merged.warnings.slice();
     // 재무상태표: 병합 → 손으로 고친 값 반영 → 빠진 합계 재계산
@@ -106,8 +108,7 @@
       const li = document.createElement('li');
       if (f.error) { li.className = 'err'; li.innerHTML = `<span class="nm" title="${escA(f.name)}">${f.name}</span><span class="tag">읽기 실패</span><button class="x" title="제거">×</button><div style="flex-basis:100%;font-size:11.5px;color:#8a3f12">${f.error}</div>`; }
       else {
-        const isBs = f.stmt.type === 'bs';
-        const tags = (isBs ? '<span class="tag bs">재무상태표</span>' : '') + f.stmt.periods.map(p => { const empty = p.items.every(it => !it.value); return `<span class="tag" style="${empty ? 'opacity:.55' : ''}">${isBs ? `${p.year}년 ${p.endMonth}월 말` : `${p.year}년 ${p.months}개월`}${p.kind === 'prev' ? '(전기)' : ''}${empty ? ' · 비어 있어 제외' : ''}</span>`; }).join('');
+        const tags = f.stmts.map(st => { const isBs = st.type === 'bs'; return `<span class="tag ${isBs ? 'bs' : 'pl'}">${isBs ? '재무상태표' : '손익계산서'}${st.multi ? ` ${st.pageRange}` : ''}</span>` + st.periods.map(p => { const empty = p.items.every(it => !it.value); return `<span class="tag" style="${empty ? 'opacity:.55' : ''}">${isBs ? `${p.year}년 ${p.endMonth}월 말` : `${p.year}년 ${p.months}개월`}${p.kind === 'prev' ? '(전기)' : ''}${empty ? ' · 비어 있어 제외' : ''}</span>`; }).join(''); }).join('');
         li.innerHTML = `<span class="nm" title="${escA(f.name)}">${f.name}</span>${tags}<button class="x" title="제거">×</button>`;
       }
       li.querySelector('.x').onclick = () => removeFile(i);
@@ -146,7 +147,7 @@
       const yr = +inp.dataset.year; const mo = parseInt(inp.value, 10);
       if (!(mo >= 1 && mo <= 12)) { toast('개월 수는 1~12 사이여야 합니다.'); recompute(); return; }
       const y = state.years.find(x => x.year === yr);
-      if (y && y.source !== 'manual') { for (const f of state.files) if (f.stmt) for (const p of f.stmt.periods) if (p.year === yr) p.months = mo; }
+      if (y && y.source !== 'manual') { for (const f of state.files) for (const st of (f.stmts || [])) if (st.type !== 'bs') for (const p of st.periods) if (p.year === yr) p.months = mo; }
       else { state.manual[yr] = state.manual[yr] || { m: {} }; state.manual[yr].months = mo; }
       recompute();
     });

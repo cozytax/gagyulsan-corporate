@@ -81,7 +81,7 @@ h3.sec small { font-weight: 400; color: var(--muted); font-size: 8pt; margin-lef
 .kpi .s b { font-weight: 600; color: var(--ink-2); }
 
 /* ---------- 손익 요약표 ---------- */
-table.pl th, table.pl td { padding: 0.9mm 2mm; border-bottom: 1px solid var(--line-soft); font-size: 8.5pt; }
+table.pl th, table.pl td { padding: 0.8mm 2mm; border-bottom: 1px solid var(--line-soft); font-size: 8.5pt; }
 table.pl th { background: #f1f4f9; color: var(--navy-deep); font-weight: 600; border-bottom: 1px solid var(--line); text-align: right; }
 table.pl th:first-child { text-align: left; }
 table.pl th small { display: block; font-weight: 400; color: var(--muted); font-size: 7.2pt; }
@@ -208,6 +208,14 @@ table.rt td.v { font-weight: 700; color: var(--ink); }
 table.rt td.v.bad { color: var(--warn); }
 table.rt td.v.na { font-weight: 400; font-size: 7.2pt; color: var(--muted); }
 table.rt td.a { color: var(--muted); }
+table.rt td.p { color: var(--muted); }
+table.rt.five th, table.rt.five td { padding-left: 1.4mm; padding-right: 1.4mm; font-size: 8pt; white-space: nowrap; }
+table.rt.five td:first-child { font-size: 7.7pt; letter-spacing: -0.01em; }
+table.rt.five .badge { min-width: 8mm; padding: 0.3mm 1.1mm; }
+table.rt.five .badge.none { font-size: 6.8pt; }
+table.rt th small { font-weight: 400; font-size: 6.6pt; }
+table.pl tr.ebitda td { color: var(--ink-2); font-style: italic; font-size: 8pt; padding-top: 0.45mm; padding-bottom: 0.5mm; }
+table.pl tr.ebitda td small { font-style: normal; font-size: 7pt; color: var(--muted); margin-left: 1mm; }
 table.rt td.a sup { font-size: 6pt; }
 table.rt tr:last-child td { border-bottom: 0; }
 .badge { display: inline-block; min-width: 9mm; text-align: center; font-size: 7.4pt; font-weight: 700; padding: 0.3mm 1.6mm; border-radius: 0.9mm; letter-spacing: 0.02em; }

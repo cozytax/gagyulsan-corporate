@@ -7,7 +7,7 @@
   const MAJOR_KEYS = ['sales', 'cogs', 'gross', 'sga', 'op', 'nonOpInc', 'nonOpExp', 'pretax', 'tax', 'net'];
   const MAJOR_LABEL = {
     sales: '매출액', cogs: '매출원가', gross: '매출총이익', sga: '판매비와관리비', op: '영업이익',
-    nonOpInc: '영업외수익', nonOpExp: '영업외비용', pretax: '세전이익', tax: '법인세등', net: '당기순이익',
+    nonOpInc: '영업외수익', nonOpExp: '영업외비용', pretax: '세전이익', tax: '법인세등', net: '당기순이익', ebitda: '상각 전 영업이익',
   };
   const TOTAL_CALC = { gross: m => m.sales - m.cogs, op: m => m.gross - m.sga, pretax: m => m.op + m.nonOpInc - m.nonOpExp, net: m => m.pretax - m.tax };
 
@@ -151,13 +151,17 @@
       const isBase = y === base;
       const f = (y.months > 0 && y.months < 12) ? 12 / y.months : 1;
       const a = {}; for (const k of MAJOR_KEYS) a[k] = y.m[k] * f;
+      // 상각비(판관비 세부 중 감가상각비·무형자산상각비 등) → 상각 전 영업이익
+      const dep = (y.details.sga || []).filter(it => (C.depreciationKeywords || []).some(k => it.label.includes(k))).reduce((s, it) => s + it.value, 0);
+      const m = { ...y.m, ebitda: y.m.op + dep }; a.ebitda = a.op + dep * f;
       const r = { grossMargin: ratio(a.gross, a.sales), opMargin: ratio(a.op, a.sales), netMargin: ratio(a.net, a.sales), sgaRatio: ratio(a.sga, a.sales), cogsRatio: ratio(a.cogs, a.sales) };
-      return { ...y, isBase, factor: f, a, r, g: {} };
+      return { ...y, m, isBase, factor: f, a, r, g: {}, dep, depA: dep * f };
     });
     for (let i = 1; i < rows.length; i++) {
       const p = rows[i - 1].a, c = rows[i].a;
-      rows[i].g = { sales: growth(c.sales, p.sales), gross: growth(c.gross, p.gross), op: growth(c.op, p.op), net: growth(c.net, p.net), sga: growth(c.sga, p.sga) };
+      rows[i].g = { sales: growth(c.sales, p.sales), gross: growth(c.gross, p.gross), op: growth(c.op, p.op), net: growth(c.net, p.net), sga: growth(c.sga, p.sga), ebitda: growth(c.ebitda, p.ebitda) };
     }
+    const hasDep = rows.some(y => y.dep > 0);
     const b = rows[rows.length - 1];
     // 전년 동기 대비(실제)
     let same = null;
@@ -170,7 +174,7 @@
     const tax = estimateTax(b, opts);
     const feedback = buildFeedback(rows, cost, tax, same, industry, opts);
     const plan = buildPlan(rows, cost, tax, same, industry, opts);
-    return { base: b, prev: rows[rows.length - 2] || null, rows, factor, same, industry, cost, tax, feedback, plan, labels: MAJOR_LABEL };
+    return { base: b, prev: rows[rows.length - 2] || null, rows, factor, same, industry, cost, tax, feedback, plan, labels: MAJOR_LABEL, hasDep };
   }
 
   /* 판관비 구조: 올해(연환산) 기준. 업종 중점 항목을 앞에 둔다 */

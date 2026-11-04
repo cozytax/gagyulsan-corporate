@@ -66,7 +66,27 @@
     if (found[1]) out.prev = { ...found[1], kind: 'prev' };
     return out;
   }
-  // 문서 종류 판별
+  /* 쪽 단위 서류 판별: 'bs' 재무상태표 | 'pl' 손익계산서 | 'skip' 그 외(이익잉여금처분계산서·제조원가명세서·표지 등)
+   * 일괄출력(재무상태표+손익계산서+이익잉여금처분계산서 한 파일)은 쪽마다 머리글이 반복되므로 머리글로 먼저 가르고, 머리글이 없는 쪽은 내용으로 판별 */
+  function classifyPage(text) {
+    const t = text.replace(/\s+/g, '');
+    if (t.length < 20) return 'skip';
+    if (/이익잉여금처분|결손금처리|제조원가명세서|총괄표|서식번호|세무조정/.test(t)) return 'skip';
+    const hasBsHead = /재무상태표|대차대조표/.test(t), hasPlHead = /손익계산서/.test(t);
+    if (hasBsHead && !hasPlHead) return 'bs';
+    if (hasPlHead && !hasBsHead) return 'pl';
+    const sc = typeScores(t);
+    if (sc.bs === 0 && sc.pl === 0) return 'skip';
+    return sc.bs > sc.pl ? 'bs' : 'pl';
+  }
+  function typeScores(t) {
+    const bs = (/재무상태표|대차대조표/.test(t) ? 2 : 0) + (/자산총계/.test(t) ? 1 : 0) + (/부채총계/.test(t) ? 1 : 0) + (/자본총계/.test(t) ? 1 : 0)
+      + (/일현재/.test(t) ? 1 : 0) + (['보통예금', '외상매출금', '미지급금', '예수금', '임차보증금', '감가상각누계액', '자본금', '외상매입금'].filter(k => t.includes(k)).length >= 4 ? 1 : 0);
+    const pl = (/손익계산서/.test(t) ? 2 : 0) + (/매출총이익|영업이익|영업손실|당기순이익|당기순손실/.test(t) ? 1 : 0) + (/판매비와관리비|판매비및관리비/.test(t) ? 1 : 0)
+      + (/부터.{0,12}까지/.test(t) ? 1 : 0) + (['급여', '복리후생비', '여비교통비', '통신비', '지급수수료', '매출원가', '매출액'].filter(k => t.includes(k)).length >= 3 ? 1 : 0);
+    return { bs, pl };
+  }
+  // 문서 종류 판별 (파일 전체)
   function detectType(fullText) {
     const t = fullText.replace(/\s+/g, '');
     const bsScore = (/재무상태표|대차대조표/.test(t) ? 2 : 0) + (/자산총계/.test(t) ? 1 : 0) + (/부채총계/.test(t) ? 1 : 0) + (/자본총계/.test(t) ? 1 : 0)
@@ -128,21 +148,25 @@
   function lineText(l) { return l.toks.map(t => t.str).join(''); }
 
   // 기간 헤더 파싱: "제4(당)기 2026년 1월 1일부터 2026년 6월30일까지"
-  const PERIOD_RE = /제\s*(\d+)\s*\(?\s*(당|전)\s*\)?\s*기[^\d]{0,6}(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*부터\s*(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*까지/g;
+  const PERIOD_RE = /제\s*(\d+)\s*\(?\s*(당|전)?\s*\)?\s*기[^\d]{0,6}(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*부터\s*(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일\s*까지/g;
 
   function parsePeriods(fullText) {
     const out = {};
     let m;
     const t = fullText.replace(/\s+/g, '');
     const re = new RegExp(PERIOD_RE.source, 'g');
+    const found = [];
     while ((m = re.exec(t)) !== null) {
-      const kind = m[2] === '당' ? 'cur' : 'prev';
-      if (out[kind]) continue;
       const sy = +m[3], sm = +m[4], ey = +m[6], em = +m[7], ed = +m[8];
       let months = (ey - sy) * 12 + (em - sm) + 1;
       if (ed < 15 && months > 1) months -= 1; // 6월 3일까지 같은 경우: 5개월로 본다
-      out[kind] = { termNo: +m[1], kind, year: ey, startMonth: sm, endMonth: em, endDay: ed, months };
+      const per = { termNo: +m[1], hint: m[2] === '당' ? 'cur' : m[2] === '전' ? 'prev' : null, year: ey, startMonth: sm, endMonth: em, endDay: ed, months };
+      if (!found.some(f => f.termNo === per.termNo && f.year === per.year && f.endMonth === per.endMonth)) found.push(per);
     }
+    // "(당)기/(전)기" 표시가 있으면 그대로, 없으면 기수가 큰 쪽이 당기 (일괄출력 양식: "제 25 기 2024년 01월 01일부터 …")
+    for (const p of found) if (p.hint && !out[p.hint]) out[p.hint] = { ...p, kind: p.hint };
+    const rest = found.filter(p => !p.hint).sort((a, b) => (b.termNo - a.termNo) || (b.year - a.year) || (b.endMonth - a.endMonth));
+    for (const p of rest) { const kind = !out.cur ? 'cur' : !out.prev ? 'prev' : null; if (kind) out[kind] = { ...p, kind }; }
     return out;
   }
 
@@ -159,21 +183,46 @@
    * @param {string} fileName
    * @returns {Promise<Statement>}
    */
-  async function parsePdf(buf, fileName) {
-    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-    let allLines = [];
-    let fullText = '';
+  /**
+   * 파일 하나 → 서류 배열. 일괄출력 PDF면 재무상태표·손익계산서가 따로 나오고, 단일 서류면 원소 1개.
+   * 쪽마다 종류를 판별해 같은 종류가 이어지는 쪽을 한 서류로 묶는다. 판별 안 되는 쪽(표지·이익잉여금처분계산서)은 버린다.
+   */
+  // 글꼴이 내장되지 않고 한글 CMap(UniKS-UCS2-H 등)만 참조하는 PDF(더존 '일괄출력' 일부 쪽)는 CMap 파일이 있어야 글자가 읽힌다
+  const PDFJS_CMAPS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/';
+  async function parsePdfAll(buf, fileName) {
+    const pdf = await pdfjsLib.getDocument({ data: buf, cMapUrl: PDFJS_CMAPS, cMapPacked: true, standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/' }).promise;
+    const pages = [];
     for (let p = 1; p <= pdf.numPages; p++) {
       const page = await pdf.getPage(p);
       const tc = await page.getTextContent();
-      const lines = buildLines(tc.items);
-      fullText += lines.map(lineText).join('\n') + '\n';
-      allLines = allLines.concat(lines.map(l => ({ ...l, page: p })));
+      const lines = buildLines(tc.items).map(l => ({ ...l, page: p }));
+      const text = lines.map(lineText).join('\n') + '\n';
+      pages.push({ p, lines, text, kind: classifyPage(text) });
     }
-    const type = detectType(fullText);
-    if (type === 'bs') return parseBS(allLines, fullText, fileName);
-    return parsePL(allLines, fullText, fileName);
+    // 같은 종류가 이어지는 쪽 묶기
+    const groups = [];
+    for (const pg of pages) {
+      if (pg.kind === 'skip') continue;
+      const last = groups[groups.length - 1];
+      if (last && last.kind === pg.kind && last.pages[last.pages.length - 1].p === pg.p - 1) last.pages.push(pg);
+      else groups.push({ kind: pg.kind, pages: [pg] });
+    }
+    // 판별된 쪽이 하나도 없으면 파일 전체를 한 서류로 (옛 동작)
+    if (!groups.length) groups.push({ kind: detectType(pages.map(x => x.text).join('')), pages });
+    const out = [];
+    for (const g of groups) {
+      const lines = g.pages.flatMap(x => x.lines); const text = g.pages.map(x => x.text).join('');
+      const stmt = g.kind === 'bs' ? parseBS(lines, text, fileName) : parsePL(lines, text, fileName);
+      stmt.pageRange = g.pages.length > 1 ? `${g.pages[0].p}~${g.pages[g.pages.length - 1].p}쪽` : `${g.pages[0].p}쪽`;
+      stmt.multi = groups.length > 1;
+      out.push(stmt);
+    }
+    // 같은 종류가 여럿이면(예: 재무상태표가 두 번) 항목이 많은 쪽 하나만
+    const pick = {};
+    for (const s of out) { const n = s.periods.reduce((a, p) => a + p.items.length, 0); if (!pick[s.type] || pick[s.type].n < n) pick[s.type] = { s, n }; }
+    return Object.values(pick).map(x => x.s);
   }
+  async function parsePdf(buf, fileName) { return (await parsePdfAll(buf, fileName))[0]; }
 
   /* 금액 열(당기/전기) 위치를 머리글에서 찾는다 — 손익계산서·재무상태표 공용 */
   function findColumns(allLines) {
@@ -379,5 +428,5 @@
     return { type: 'pl', fileName, company, entityType, periods: out, lineCount: allLines.length, rawText: fullText };
   }
 
-  window.Parser = { parsePdf, majorKey, bsMajorKey, normalizeLabel, detectType };
+  window.Parser = { parsePdf, parsePdfAll, majorKey, bsMajorKey, normalizeLabel, detectType, classifyPage };
 })();

@@ -94,6 +94,7 @@
       .join('');
     const spec = [
       ['sales', 'total'], ['cogs', 'sub'], ['gross', 'total'], ['sga', 'sub'], ['op', 'total hl'], ['opMargin', 'pct'],
+      ...(analysis.hasDep ? [['ebitda', 'sub ebitda']] : []),
       ['nonOpInc', 'sub'], ['nonOpExp', 'sub'], ['pretax', 'total'], ['tax', 'sub'], ['net', 'total hl'],
     ];
     const cell = (v, cls) => `<td class="${cls || ''}${v < 0 ? ' neg' : ''}">${Fmt.wonUnit(v, unit)}</td>`;
@@ -106,12 +107,13 @@
       }
       const isTotal = cls.includes('total');
       let label = MAJOR_LABEL[k];
+      if (k === 'ebitda') label = `상각 전 영업이익 <small>상각비 ${Fmt.man(b.depA)} 가산</small>`;
       if (k === 'tax') label = analysis.tax.entity === 'indiv' ? '소득세등' : '법인세등';
       if (k === 'pretax') label = analysis.tax.entity === 'indiv' ? '소득세차감전이익' : '법인세차감전이익';
       const g = analysis.prev ? (b.g[k] !== undefined ? b.g[k] : ((analysis.prev.a[k]) ? (b.a[k] - analysis.prev.a[k]) / Math.abs(analysis.prev.a[k]) * 100 : null)) : null;
       const gCls = g === null ? '' : g > 0 ? 'up' : g < 0 ? 'down' : '';
       return `<tr class="${cls}"><td class="${isTotal ? '' : 'sub'}">${label}</td>` +
-        prevRows.map(y => cell(y.m[k])).join('') + (same ? cell(same.m[k]) : '') + cell(b.m[k]) +
+        prevRows.map(y => cell(y.m[k])).join('') + (same ? cell(k === 'ebitda' ? null : same.m[k]) : '') + cell(b.m[k]) +
         (est ? cell(b.a[k], 'est') : '') +
         (analysis.prev ? `<td class="delta ${g ? gCls : ''}">${Fmt.delta(g)}</td>` : '') + '</tr>';
     }).join('');
@@ -177,8 +179,10 @@
 <p class="tax-note">(단위: ${unit === 1000 ? '천원' : '원'})${c.labor.cur > 0 ? ` 인건비 합계 ${Fmt.man(c.labor.cur)}(매출의 ${Fmt.pct(c.labor.share)})` : ''}</p>`;
   }
 
-  function glossary() {
-    return `<div class="glossary"><b>용어</b> ${C.glossary.map(([k, v]) => `<span><i>${esc(k)}</i> ${esc(v)}</span>`).join('')}</div>`;
+  function glossary(analysis) {
+    const terms = C.glossary.slice();
+    if (analysis && analysis.hasDep) terms.push(['상각 전 영업이익', '현금이 나가지 않는 감가상각비·무형자산상각비를 빼기 전 영업이익(EBITDA)']);
+    return `<div class="glossary"><b>용어</b> ${terms.map(([k, v]) => `<span><i>${esc(k)}</i> ${esc(v)}</span>`).join('')}</div>`;
   }
 
   /* ---------- 1쪽: 경영성과 요약 ---------- */
@@ -199,7 +203,7 @@
     <div><h3 class="sec">매출·영업이익 추이</h3>${chart(analysis)}</div>
     <div><h3 class="sec">주요 비용 항목 <small>판관비</small></h3>${costTable(analysis, options.unit || 1)}</div>
   </div>
-  ${glossary()}
+  ${glossary(analysis)}
   ${footer(model, pageNo, total)}
 </section>`;
   }
@@ -270,8 +274,8 @@
     const cnt = g => { const c = g.count; const parts = []; if (c.good) parts.push(`<b class="good">양호 ${c.good}</b>`); if (c.normal) parts.push(`<b class="normal">보통 ${c.normal}</b>`); if (c.bad) parts.push(`<b class="bad">미흡 ${c.bad}</b>`); return parts.join(''); };
     return `<div class="ratio-grid">${r.groups.map(g => `<div class="rgroup">
   <div class="rg-head"><span class="nm">${esc(g.label)} 지표</span><span class="ds">${esc(g.desc)}</span><span class="cnt">${cnt(g)}</span></div>
-  <table class="rt"><thead><tr><th>항목</th><th>해당업체</th><th>업종평균</th><th>평가</th></tr></thead><tbody>
-  ${g.items.map(it => `<tr><td>${esc(it.label)}</td><td class="v${it.grade === 'bad' ? ' bad' : ''}${it.value === null && !it.text.includes('없음') ? ' na' : ''}">${it.value === null && it.note && !it.text.includes('없음') ? esc(it.note) : esc(it.text)}</td><td class="a">${esc(it.avgText)}${it.avgFallback ? '<sup>†</sup>' : ''}</td><td>${badge(it)}</td></tr>`).join('')}
+  <table class="rt${r.hasPrevCol ? ' five' : ''}"><thead><tr><th>항목</th>${r.hasPrevCol ? `<th>${r.bsPrev.year}년<small>${r.bsPrev.endMonth < 12 ? ` ${r.bsPrev.endMonth}월` : ''}</small></th>` : ''}<th>${r.bs.year}년<small>${r.bs.endMonth < 12 ? ` ${r.bs.endMonth}월` : ''}</small></th><th>업종평균</th><th>평가</th></tr></thead><tbody>
+  ${g.items.map(it => `<tr><td>${esc(it.label)}</td>${r.hasPrevCol ? `<td class="p">${esc(it.prevText)}</td>` : ''}<td class="v${it.grade === 'bad' ? ' bad' : ''}${it.value === null && !it.text.includes('없음') ? ' na' : ''}">${it.value === null && it.note && !it.text.includes('없음') ? esc(it.note) : esc(it.text)}</td><td class="a">${esc(it.avgText)}${it.avgFallback ? '<sup>†</sup>' : ''}</td><td>${badge(it)}</td></tr>`).join('')}
   </tbody></table></div>`).join('')}</div>`;
   }
   function ratioPoints(r) {
@@ -284,7 +288,7 @@
     const fallback = r.groups.some(g => g.items.some(it => it.avgFallback));
     const formulas = r.groups.map(g => g.items.map(it => `<span><i>${esc(it.label)}</i> ${esc(it.formula)}</span>`).join('')).join('');
     return `<div class="glossary ratio-notes">
-  <div><b>평가 기준</b> 업종평균 대비 ${bandTxt('rel10', '비율·회전율')} · ${bandTxt('pp1', '이익률')} · ${bandTxt('pp3', '증가율')} · ${bandTxt('x1', '이자보상비율')} 이내면 '보통', 벗어나면 좋은 방향은 '양호', 나쁜 방향은 '미흡'. ${r.hasPl && r.pl && r.pl.factor !== 1 ? `손익 항목은 ${r.pl.months}개월 실적을 12개월로 환산한 값. ` : ''}${C.turnoverUseAverage !== false && r.bsPrev ? '회전율·ROA·ROE 분모는 기초·기말 평균잔액. ' : ''}${r.bsPrev && r.bs.endMonth < 12 ? `증가율은 전기 말 대비 ${r.bs.endMonth}개월간 변동(연환산 아님). ` : ''}${fallback ? '† 해당 세분류 자료가 없어 상위 업종 평균 사용. ' : ''}업종평균 출처: ${esc(r.avgSource || '')}${r.industry ? ` — 기준 업종 ${esc(r.industry.key)} · ${esc(r.firmSize)}` : ' — 업종 미선택(비교 생략)'}.</div>
+  <div><b>평가 기준</b> 업종평균 대비 ${bandTxt('rel10', '비율·회전율')} · ${bandTxt('pp1', '이익률')} · ${bandTxt('pp3', '증가율')} · ${bandTxt('x1', '이자보상비율')} 이내면 '보통', 벗어나면 좋은 방향은 '양호', 나쁜 방향은 '미흡'. ${r.hasPl && r.pl && r.pl.factor !== 1 ? `손익 항목은 ${r.pl.months}개월 실적을 12개월로 환산한 값. ` : ''}${C.turnoverUseAverage !== false && r.bsPrev ? '회전율·ROA·ROE 분모는 기초·기말 평균잔액. ' : ''}${r.bsPrev && r.bs.endMonth < 12 ? `증가율은 전기 말 대비 ${r.bs.endMonth}개월간 변동(연환산 아님). ` : ''}${fallback ? '† 해당 세분류 자료가 없어 상위 업종 평균 사용. ' : ''}${r.substituted ? r.substituted + '. ' : ''}업종평균 출처: ${esc(r.avgSource || '')}${r.industry ? ` — 기준 업종 ${esc(r.industry.key)} · ${esc(r.firmSize)}` : ' — 업종 미선택(비교 생략)'}.</div>
   <div class="formulas"><b>산식</b> ${formulas}</div>
 </div>`;
   }
